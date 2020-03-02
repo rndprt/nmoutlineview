@@ -25,8 +25,12 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     @objc func outlineView(_ outlineView: NMOutlineView, isItemExpandable item: Any) -> Bool
     @objc optional func outlineView(_ outlineView: NMOutlineView, shouldExpandItem item: Any) -> Bool
     @objc func outlineView(_ outlineView: NMOutlineView, cellFor item: Any) -> NMOutlineViewCell
+    @objc optional func outlineView(_ outlineView: NMOutlineView, shouldHighlight cell: NMOutlineViewCell) -> Bool
     @objc optional func outlineView(_ outlineView: NMOutlineView, didSelect cell: NMOutlineViewCell)
     @objc func outlineView(_ outlineView: NMOutlineView, child index: Int, ofItem item: Any?)->Any
+    
+    @available(iOS 13, *)
+    @objc optional func outlineView(_ outlineView: NMOutlineView, contextMenuConfigurationForCell cell: NMOutlineViewCell, point: CGPoint) -> UIContextMenuConfiguration?
 }
 
 
@@ -163,6 +167,10 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
         return tableIndexPath.row
     }
     
+    open func deselectCell(_ cell: NMOutlineViewCell, animated: Bool) {
+        guard let tableIndexPath = super.indexPath(for: cell) else { return }
+        super.deselectRow(at: tableIndexPath, animated: animated)
+    }
     
     @objc open override func insertRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation) {
         var tableIndexPaths = Array<IndexPath>()
@@ -342,11 +350,34 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
                 print("ERROR: unable to find cell at NMOutlineView.tableView IndexPath")
                 return
         }
-        guard  datasource.responds(to: #selector(NMOutlineViewDatasource.outlineView(_:didSelect:))) else {
-            print("ERROR: NMOutlineViewDatasource protocol method outlineView(_:didSelectCell:) not implemented")
-            return
-        }
         datasource.outlineView?(self, didSelect: cell)
+    }
+
+    @objc public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+        guard let datasource = self.datasource else {
+            print("ERROR: no NMOutlineView datasource defined.")
+            return true
+        }
+        guard let cell = super.cellForRow(at: indexPath) as? NMOutlineViewCell
+            else {
+                print("ERROR: unable to find cell at NMOutlineView.tableView IndexPath")
+                return true
+        }
+        return datasource.outlineView?(self, shouldHighlight: cell) ?? true
+    }
+    
+    @available(iOS 13, *)
+    public func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let datasource = self.datasource else {
+            print("ERROR: no NMOutlineView datasource defined.")
+            return nil
+        }
+        guard let cell = super.cellForRow(at: indexPath) as? NMOutlineViewCell
+            else {
+                print("ERROR: unable to find cell at NMOutlineView.tableView IndexPath")
+                return nil
+        }
+        return datasource.outlineView?(self, contextMenuConfigurationForCell: cell, point: point)
     }
 }
 
