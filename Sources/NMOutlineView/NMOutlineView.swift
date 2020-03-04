@@ -150,6 +150,11 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
         return super.cellForRow(at: IndexPath(row: index, section: 0)) as? NMOutlineViewCell
     }
     
+    open func firstCellForItem(where closure : ((Any)->(Bool)) ) -> NMOutlineViewCell? {
+        guard let index = tableViewDatasource.firstIndex(where: { closure($0.item) }) else { return nil }
+        return super.cellForRow(at: IndexPath(row: index, section: 0)) as? NMOutlineViewCell
+    }
+
     
     @objc open func indexPathforCell(at point:CGPoint) -> IndexPath? {
         return super.indexPathForRow(at: point)
@@ -167,6 +172,11 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
         return tableIndexPath.row
     }
     
+    open func selectCell(_ cell: NMOutlineViewCell, animated: Bool, scrollPosition: UITableView.ScrollPosition = .top) {
+        guard let tableIndexPath = super.indexPath(for: cell) else { return }
+        super.selectRow(at: tableIndexPath, animated: animated, scrollPosition: scrollPosition)
+    }
+
     open func deselectCell(_ cell: NMOutlineViewCell, animated: Bool) {
         guard let tableIndexPath = super.indexPath(for: cell) else { return }
         super.deselectRow(at: tableIndexPath, animated: animated)
@@ -178,9 +188,10 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
             if !(tableViewDatasource.contains(where: {$0.indexPath == indexPath})) {
                 if let parentIndex = tableViewDatasource.firstIndex(where: { $0.indexPath == indexPath.dropLast() }),
                     let parentItem = tableViewDatasource.first(where: { $0.indexPath == indexPath.dropLast() }),
-                    indexPath.last ?? Int.max < datasource.outlineView(self, numberOfChildrenOfItem: parentItem) - 1,
+                    parentItem.isExpanded,
+                    indexPath.last ?? Int.max <= datasource.outlineView(self, numberOfChildrenOfItem: parentItem.item) - 1,
                     parentIndex + (indexPath.last ?? Int.max) <= tableViewDatasource.count {
-                    let childItem = datasource.outlineView(self, child: indexPath.last!, ofItem: parentItem)
+                    let childItem = datasource.outlineView(self, child: indexPath.last!, ofItem: parentItem.item)
                     let item = NMItem(withItem: childItem, at: indexPath, ofParent: parentItem, isExpanded: false)
                     tableViewDatasource.insert(item, at: parentIndex + indexPath.last! + 1)
                     tableIndexPaths.append(IndexPath(row: parentIndex + indexPath.last! + 1))
