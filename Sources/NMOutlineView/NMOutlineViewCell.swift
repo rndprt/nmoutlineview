@@ -26,14 +26,20 @@ import UIKit
     /// Expand/Collapse control
     @objc dynamic public var toggleButton: UIButton! = UIButton(type: .custom)
     
-    @IBInspectable @objc dynamic open var isExpanded: Bool  {
-        get {
-            return self.toggleButton.isSelected
-        }
-        set(newState) {
-            self.toggleButton.isSelected = newState
+    @IBInspectable @objc dynamic open var isExpanded: Bool = false  {
+        didSet {
+            UIView.animate(withDuration: CATransaction.animationDuration()) {
+                if self.isExpanded {
+                    self.toggleImageView.transform = CGAffineTransform(rotationAngle: CGFloat.pi / 2)
+                }
+                else {
+                    self.toggleImageView.transform = .identity
+                }
+            }
         }
     }
+
+    @objc dynamic public var toggleImageView: UIImageView = UIImageView(frame: .zero)
 
     /// Cell indentation level
     @IBInspectable @objc dynamic public var nmIndentationLevel: Int = 0
@@ -55,16 +61,16 @@ import UIKit
         }
         set(newValue) {
             self.toggleButton.isHidden = newValue
+            self.toggleImageView.isHidden = newValue
             layoutIfNeeded()
         }
-        
     }
     
     /// Toggle Button Size
     @IBInspectable @objc dynamic open var buttonSize: CGSize = CGSize.zero
     {
         didSet {
-            toggleButton.frame.size = buttonSize
+            toggleImageView.frame.size = buttonSize
             if indentationWidth < buttonSize.width {
                 super.indentationWidth = buttonSize.width
                 self.indentationWidth = buttonSize.width
@@ -75,26 +81,9 @@ import UIKit
 
 
     /// Toggle Button Collapsed Image
-    @IBInspectable @objc dynamic public var buttonImage: UIImage!
-    {
-        set(newImage) {
-            toggleButton.setImage(newImage, for: .normal)
-        }
-        get {
-            return toggleButton.image(for: .normal)
-        }
-    }
-    
-    
-    /// Toggle Button Expanded Image
-    @IBInspectable @objc dynamic public var buttonExpandedImage: UIImage!
-    {
-        set(newImage) {
-           self.toggleButton.setImage(newImage, for: .selected)
-        }
-        get {
-            return toggleButton.image(for: .selected)
-        }
+    @IBInspectable @objc dynamic public var buttonImage: UIImage? {
+        get { return toggleImageView.image }
+        set { toggleImageView.image = newValue }
     }
     
     
@@ -118,69 +107,23 @@ import UIKit
     // MARK: Initializer
     @objc override public init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        self.nmIndentationLevel = 0
-        self.indentationWidth = 27
-        self.buttonSize = CGSize(width: 19, height: 19)
-        self.buttonIsHidden = false
-        self.buttonImage = UIImage(named: "arrowtriangle.right.fill")
-        self.buttonExpandedImage = UIImage(named: "arrowtriangle.down.fill")
-        self.isExpanded = false
-        self.toggleButton.contentVerticalAlignment  = .center
-        self.toggleButton.contentHorizontalAlignment = .center
-        self.toggleButton.addTarget(self, action: #selector(toggleButtonAction(sender:)), for: .touchUpInside)
-        self.addSubview(toggleButton)
-        self.contentView.frame = CGRect(x: self.indentationWidth, y: 0, width: self.bounds.size.width - self.indentationWidth, height: self.bounds.size.height)
-        self.toggleButton.frame = CGRect(x: self.indentationWidth - self.buttonSize.width, y: (self.bounds.size.height - self.buttonSize.height)/2.0, width: self.buttonSize.width, height: self.buttonSize.height)
+        configureSubviews()
     }
     
     @objc required public init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
+        configureSubviews()
     }
     
     @objc override open func awakeFromNib() {
         super.awakeFromNib()
-       if self.buttonSize == CGSize.zero {
-           self.buttonSize = CGSize(width: 19, height: 19)
-        }
-        if self.indentationWidth == 0 {
-            self.indentationWidth = 27
-        }
-      if self.buttonImage == nil {
-            self.buttonImage = UIImage(named: "arrowtriangle.right.fill")
-        }
-        if self.buttonExpandedImage == nil {
-            self.buttonExpandedImage = UIImage(named: "arrowtriangle.down.fill")
-        }
-        self.toggleButton.contentVerticalAlignment  = .center
-        self.toggleButton.contentHorizontalAlignment = .center
-        self.toggleButton.addTarget(self, action: #selector(toggleButtonAction(sender:)), for: .touchUpInside)
-        self.addSubview(self.toggleButton)
-        self.contentView.frame = CGRect(x: self.indentationWidth, y: 0, width: self.bounds.size.width - self.indentationWidth, height: self.bounds.size.height)
-        self.toggleButton.frame = CGRect(x: self.indentationWidth - self.buttonSize.width, y: (self.bounds.size.height - self.buttonSize.height)/2.0, width: self.buttonSize.width, height: self.buttonSize.height)
+        configureSubviews()
     }
     
     
     @objc override open func prepareForInterfaceBuilder() {
         super.prepareForInterfaceBuilder()
-        if self.indentationWidth == 0 {
-            self.indentationWidth = 27
-        }
-        if self.buttonSize == CGSize.zero {
-            self.buttonSize = CGSize(width: 19, height: 19)
-        }
-        if self.buttonImage == nil {
-            self.buttonImage = UIImage(named: "arrowtriangle.right.fill")
-        }
-        if self.buttonExpandedImage == nil {
-            self.buttonExpandedImage = UIImage(named: "arrowtriangle.down.fill")
-        }
-        self.toggleButton.contentVerticalAlignment  = .center
-        self.toggleButton.contentHorizontalAlignment = .center
-        self.toggleButton.addTarget(self, action: #selector(toggleButtonAction(sender:)), for: .touchUpInside)
-        self.addSubview(self.toggleButton)
-        self.contentView.frame = CGRect(x: self.indentationWidth, y: 0, width: self.bounds.size.width - self.indentationWidth, height: self.bounds.size.height)
-        self.toggleButton.frame = CGRect(x: self.indentationWidth - self.buttonSize.width, y: (self.bounds.size.height - self.buttonSize.height)/2.0, width: self.buttonSize.width, height: self.buttonSize.height)
-        layoutIfNeeded()
+        configureSubviews()
     }
     
     // MARK: Layout
@@ -188,17 +131,12 @@ import UIKit
     @objc override open func layoutSubviews() {
         super.layoutSubviews()
         
-        let indentationX = CGFloat(self.nmIndentationLevel + (self.toggleButton.isHidden ? 0 : 1)) * self.indentationWidth
-        contentView.frame = CGRect(x: indentationX, y: 0, width: bounds.size.width - indentationX, height: bounds.size.height)
+        contentView.frame = contentViewFrame
+        toggleButton.frame = toggleButtonFrame
+        toggleImageView.frame = toggleImageFrame
         
-        let size = contentView.bounds.size
+        textLabel?.frame.size.width -= leadingIntentation
         
-        // Toggle button
-        if !toggleButton.isHidden {
-            let btnSize = toggleButton.frame.size
-            let btnFrame = CGRect(x:indentationX - btnSize.width, y: (size.height - btnSize.height)/2.0, width: btnSize.width, height: btnSize.height)
-            toggleButton.frame = btnFrame.integral
-        }
         setNeedsDisplay()
     }
     
@@ -229,5 +167,41 @@ import UIKit
         
     }
     
+    //MARK:- Private
+    private var leadingIntentation : CGFloat {
+        return CGFloat(self.nmIndentationLevel + (self.toggleButton.isHidden ? 0 : 1)) * self.indentationWidth
+    }
+    private var contentViewFrame : CGRect {
+        let indentationX = leadingIntentation
+        return CGRect(x: indentationX, y: 0, width: bounds.size.width - indentationX, height: bounds.size.height)
+    }
+    private var toggleButtonFrame : CGRect {
+        return CGRect(x: 0, y: 0, width: leadingIntentation + buttonSize.width, height: bounds.size.height)
+    }
+    private var toggleImageFrame : CGRect {
+        return CGRect(x:layoutMargins.left + leadingIntentation - buttonSize.width - 4, y: (bounds.size.height - buttonSize.height)/2.0, width: buttonSize.width, height: buttonSize.height).integral
+    }
+    private func configureSubviews() {
+        if self.buttonSize == CGSize.zero {
+            self.buttonSize = CGSize(width: 19, height: 19)
+        }
+        if self.indentationWidth == 0 {
+            self.indentationWidth = 27
+        }
+        if self.buttonImage == nil {
+            self.buttonImage = UIImage(named: "arrowtriangle.right.fill")
+        }
+        self.buttonIsHidden = false
+        self.toggleImageView.frame = toggleImageFrame
+        self.toggleImageView.contentMode  = .center
+        self.addSubview(toggleImageView)
+        
+        self.toggleButton.backgroundColor = .clear // toggleButton is a touch target
+        self.toggleButton.addTarget(self, action: #selector(toggleButtonAction(sender:)), for: .primaryActionTriggered)
+        self.addSubview(toggleButton)
+        self.contentView.frame = contentViewFrame
+        self.toggleButton.frame = toggleButtonFrame
+        self.isExpanded = false
+    }
 }
 
