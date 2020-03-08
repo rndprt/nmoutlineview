@@ -149,7 +149,7 @@ import UIKit
     }
     
     @objc open func update(with item: Any) {
-        fatalError("update(with:Any) method of Type NMOutlineTableViewCell must be implemented")
+
     }
     
     

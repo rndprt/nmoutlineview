@@ -347,6 +347,7 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
         theCell.onToggle = { (sender) in
             let _:NSObject? = self.toggleItem(item)
         }
+        theCell.update(with: item.item)
         return theCell
     }
     
