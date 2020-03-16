@@ -24,6 +24,7 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     @objc func outlineView(_ outlineView: NMOutlineView, numberOfChildrenOfItem item: Any?) -> Int
     @objc func outlineView(_ outlineView: NMOutlineView, isItemExpandable item: Any) -> Bool
     @objc optional func outlineView(_ outlineView: NMOutlineView, shouldExpandItem item: Any) -> Bool
+    @objc optional func outlineView(_ outlineView: NMOutlineView, heightForItem item: Any) -> CGFloat
     @objc func outlineView(_ outlineView: NMOutlineView, cellFor item: Any) -> NMOutlineViewCell
     @objc optional func outlineView(_ outlineView: NMOutlineView, shouldHighlight cell: NMOutlineViewCell) -> Bool
     @objc optional func outlineView(_ outlineView: NMOutlineView, didSelect cell: NMOutlineViewCell)
@@ -363,6 +364,15 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
                 return
         }
         datasource.outlineView?(self, didSelect: cell)
+    }
+    
+    @objc public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        let rowHeight = tableView.rowHeight
+        guard let datasource = self.datasource else {
+            print("ERROR: no NMOutlineView datasource defined.")
+            return rowHeight
+        }
+        return datasource.outlineView?(self, heightForItem: tableViewDatasource[indexPath.row].item) ?? rowHeight
     }
 
     @objc public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
