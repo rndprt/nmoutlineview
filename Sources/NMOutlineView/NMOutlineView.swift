@@ -21,15 +21,26 @@ extension IndexPath {
 // MARK:- NMOutlineDatasource Protocol
 @objc(NMOutlineViewDatasource)
 public protocol NMOutlineViewDatasource: NSObjectProtocol {
+    // Required
     @objc func outlineView(_ outlineView: NMOutlineView, numberOfChildrenOfItem item: Any?) -> Int
     @objc func outlineView(_ outlineView: NMOutlineView, isItemExpandable item: Any) -> Bool
-    @objc optional func outlineView(_ outlineView: NMOutlineView, shouldExpandItem item: Any) -> Bool
-    @objc optional func outlineView(_ outlineView: NMOutlineView, heightForItem item: Any) -> CGFloat
     @objc func outlineView(_ outlineView: NMOutlineView, cellFor item: Any) -> NMOutlineViewCell
+    @objc func outlineView(_ outlineView: NMOutlineView, child index: Int, ofItem item: Any?)->Any
+
+    // Selection
     @objc optional func outlineView(_ outlineView: NMOutlineView, shouldHighlight cell: NMOutlineViewCell) -> Bool
     @objc optional func outlineView(_ outlineView: NMOutlineView, didSelect cell: NMOutlineViewCell)
-    @objc func outlineView(_ outlineView: NMOutlineView, child index: Int, ofItem item: Any?)->Any
     
+    // Expansion
+    @objc optional func outlineView(_ outlineView: NMOutlineView, shouldExpandItem item: Any) -> Bool
+    @objc optional func outlineView(_ outlineView: NMOutlineView, willExpandItem item: Any)
+    @objc optional func outlineView(_ outlineView: NMOutlineView, didExpandItem item: Any)
+    @objc optional func outlineView(_ outlineView: NMOutlineView, willCollapseItem item: Any)
+    @objc optional func outlineView(_ outlineView: NMOutlineView, didCollapseItem item: Any)
+
+    // Others
+    @objc optional func outlineView(_ outlineView: NMOutlineView, heightForItem item: Any) -> CGFloat
+
     @available(iOS 13, *)
     @objc optional func outlineView(_ outlineView: NMOutlineView, contextMenuConfigurationForCell cell: NMOutlineViewCell, point: CGPoint) -> UIContextMenuConfiguration?
 }
@@ -55,7 +66,7 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
             let rootItemsCount = datasource.outlineView(self, numberOfChildrenOfItem: nil)
             for index in 0 ..< rootItemsCount {
                 let item = datasource.outlineView(self, child: index, ofItem: nil)
-                let nmItem = NMItem(withItem: item, at: IndexPath(index: index), ofParent: nil, isExpanded: false)
+                let nmItem = NMNode(withItem: item, at: IndexPath(index: index), ofParent: nil, isExpanded: false)
                 tableViewDatasource.append(nmItem)
             }
         }
@@ -64,16 +75,16 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     
     
     // Single item in the collection
-    @objc open class NMItem: NSObject  {
+    @objc open class NMNode: NSObject  {
         @objc dynamic public var item: Any
         @objc dynamic public var indexPath: IndexPath
         @objc dynamic public var isExpanded = false
-        @objc dynamic public var parent: NMItem?
+        @objc dynamic public var parent: NMNode?
         @objc dynamic public var level: Int  {
             return indexPath.count - 1
         }
         
-        public init(withItem item: Any, at indexPath: IndexPath, ofParent parent: NMItem?, isExpanded expanded:Bool) {
+        public init(withItem item: Any, at indexPath: IndexPath, ofParent parent: NMNode?, isExpanded expanded:Bool) {
             self.item = item
             self.indexPath = indexPath
             self.isExpanded = expanded
@@ -86,9 +97,10 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     static public var cellIdentifier = "nmOutlineViewCell"
 
     @IBInspectable @objc public dynamic var maintainExpandedItems: Bool = false
+    @IBInspectable @objc public dynamic var maintainSection: Bool = false
 
-    private var oldTableViewDatasource = [NMItem]()
-    @objc dynamic private var tableViewDatasource = [NMItem]()
+    private var oldTableViewDatasource = [NMNode]()
+    @objc dynamic private var tableViewDatasource = [NMNode]()
     
     // MARK: Initializers
     
@@ -188,12 +200,12 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
         for indexPath in indexPaths {
             if !(tableViewDatasource.contains(where: {$0.indexPath == indexPath})) {
                 if let parentIndex = tableViewDatasource.firstIndex(where: { $0.indexPath == indexPath.dropLast() }),
-                    let parentItem = tableViewDatasource.first(where: { $0.indexPath == indexPath.dropLast() }),
-                    parentItem.isExpanded,
-                    indexPath.last ?? Int.max <= datasource.outlineView(self, numberOfChildrenOfItem: parentItem.item) - 1,
+                    let parentNode = tableViewDatasource.first(where: { $0.indexPath == indexPath.dropLast() }),
+                    parentNode.isExpanded,
+                    indexPath.last ?? Int.max <= datasource.outlineView(self, numberOfChildrenOfItem: parentNode.item) - 1,
                     parentIndex + (indexPath.last ?? Int.max) <= tableViewDatasource.count {
-                    let childItem = datasource.outlineView(self, child: indexPath.last!, ofItem: parentItem.item)
-                    let item = NMItem(withItem: childItem, at: indexPath, ofParent: parentItem, isExpanded: false)
+                    let childItem = datasource.outlineView(self, child: indexPath.last!, ofItem: parentNode.item)
+                    let item = NMNode(withItem: childItem, at: indexPath, ofParent: parentNode, isExpanded: false)
                     tableViewDatasource.insert(item, at: parentIndex + indexPath.last! + 1)
                     tableIndexPaths.append(IndexPath(row: parentIndex + indexPath.last! + 1))
                 }
@@ -218,16 +230,16 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     @objc open override func reloadRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation = .none) {
         var tableIndexPaths = [IndexPath]()
         for indexPath in indexPaths {
-            guard let item = tableViewDatasource.first(where: {$0.indexPath == indexPath }),
+            guard let node = tableViewDatasource.first(where: {$0.indexPath == indexPath }),
                 let cell = self.cellForRow(at: indexPath) else { continue }
             if animation != .none ,
-                let index = tableViewDatasource.firstIndex(of: item) {
+                let index = tableViewDatasource.firstIndex(of: node) {
                 tableIndexPaths.append(IndexPath(row: index))
             } else {
-                if Mirror(reflecting: item.item).displayStyle != .class {
-                    item.item = datasource.outlineView(self, child: indexPath.last!, ofItem: item.parent)
+                if Mirror(reflecting: node.item).displayStyle != .class {
+                    node.item = datasource.outlineView(self, child: indexPath.last!, ofItem: node.parent)
                 }
-                cell.update(with: item.item)
+                cell.update(with: node.item)
             }
         }
         if !tableIndexPaths.isEmpty {
@@ -240,17 +252,23 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
             oldTableViewDatasource = tableViewDatasource.filter({$0.isExpanded})
         }
         self.restartDatasource()
-        if maintainExpandedItems {
-            for item in Array(tableViewDatasource) {
-                if let oldItemIndex = oldTableViewDatasource.firstIndex(where: {$0.item as? T == (item.item as? T) }) {
-                    if oldTableViewDatasource[oldItemIndex].isExpanded {
-                        let _: NSObject? = self.toggleItem(item)
-                    }
-                    oldTableViewDatasource.remove(at: oldItemIndex)
-                }
+        for node in Array(tableViewDatasource) {
+            if shouldExpandItem(node.item as? T) {
+                let _: T? = self.expandNode(node, isUserInitiated: false)
             }
         }
+        oldTableViewDatasource = []
         return nil
+    }
+    
+    private func shouldExpandItem<T: Equatable>(_ item : T) -> Bool {
+        if let shouldExpand = datasource.outlineView?(self, shouldExpandItem: item) {
+            return shouldExpand && datasource.outlineView(self, isItemExpandable: item)
+        }
+        if maintainExpandedItems, let previous = oldTableViewDatasource.firstIndex(where: {$0.item as? T == item }) {
+            return oldTableViewDatasource[previous].isExpanded
+        }
+        return false
     }
     
     
@@ -259,67 +277,85 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
     }
     
     
-    fileprivate func toggleItem<T:Equatable>(_ item: NMItem)->T? {
+    fileprivate func toggleNode<T:Equatable>(_ node: NMNode)->T? {
+        if node.isExpanded {
+            return collapseNode(node, isUserInitiated: true)
+        } else {
+            return expandNode(node, isUserInitiated: true)
+        }
+    }
+    
+    fileprivate func expandNode<T:Equatable>(_ node: NMNode, isUserInitiated: Bool)->T? {
         guard let datasource = self.datasource,
-            let index = tableViewDatasource.firstIndex(of: item) else { return nil}
+            let index = tableViewDatasource.firstIndex(of: node) else { return nil}
         
-        if item.isExpanded {
-            // Collapse
-            let childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: item.item)
-            item.isExpanded = false
-            if childrenCount > 0 {
-                var tableViewIndexPaths = [IndexPath]()
-                var indexes = IndexSet()
-                for i in 0..<childrenCount
-                {
-                    let childrenItem = tableViewDatasource[index + i + 1]
-                    if childrenItem.isExpanded {
-                        let _: NSObject? = self.toggleItem(childrenItem)
-                    }
-                     let tableViewIndexPath = IndexPath(row: index + i + 1, section: 0)
-                    tableViewIndexPaths.append(tableViewIndexPath)
-                    indexes.insert(index + i + 1)
+        if datasource.outlineView(self, isItemExpandable: node.item) {
+            if isUserInitiated {
+                datasource.outlineView?(self, willExpandItem: node.item)
+            }
+            node.isExpanded = true
+            var childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: node.item)
+            let nodeIndexPath = node.indexPath
+            while childrenCount > 0 {
+                var itemIndexPath = IndexPath(indexes: nodeIndexPath)
+                itemIndexPath.append(childrenCount - 1)
+                let childItem = datasource.outlineView(self, child: childrenCount - 1, ofItem: node.item)
+                let newNode = NMNode(withItem: childItem, at: itemIndexPath, ofParent: node, isExpanded: false)
+                tableViewDatasource.insert(newNode, at: index + 1)
+                super.insertRows(at: [IndexPath(row: index + 1, section: 0)], with: .fade)
+                if shouldExpandItem(childItem as? T) {
+                    let _: NSObject? = self.toggleNode(newNode)
                 }
-                if !tableViewIndexPaths.isEmpty {
-                    while let index = indexes.last {
-                        tableViewDatasource.remove(at: index)
-                        indexes = IndexSet(indexes.dropLast())
-                    }
-                    super.deleteRows(at: tableViewIndexPaths, with: .fade)
+                childrenCount -= 1
+                if isUserInitiated {
+                    datasource.outlineView?(self, didExpandItem: node.item)
                 }
-                
-            } else {
-                print("ERROR: NMOutlineView cell is NOT collapsable")
             }
         } else {
-            // Expand
-            if datasource.outlineView(self, isItemExpandable: item.item) {
-                item.isExpanded = true
-                var childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: item.item)
-                let cellItemIndexPath = item.indexPath
-                while childrenCount > 0 {
-                    var itemIndexPath = IndexPath(indexes: cellItemIndexPath)
-                    itemIndexPath.append(childrenCount - 1)
-                    let childItem = datasource.outlineView(self, child: childrenCount - 1, ofItem: item.item)
-                    let newItem = NMItem(withItem: childItem, at: itemIndexPath, ofParent: item, isExpanded: false)
-                    tableViewDatasource.insert(newItem, at: index + 1)
-                    super.insertRows(at: [IndexPath(row: index + 1, section: 0)], with: .fade)
-                    if maintainExpandedItems,
-                    let oldItemIndex = oldTableViewDatasource.firstIndex(where: {$0.item as? T == childItem as? T}) {
-                        if oldTableViewDatasource[oldItemIndex].isExpanded {
-                            let _: NSObject? = self.toggleItem(newItem)
-                        }
-                        oldTableViewDatasource.remove(at: oldItemIndex)
-                    }
-                    childrenCount -= 1
-                }
-            } else {
-                print("ERROR: NMOutlineView cell is NOT expandable")
-            }
+            print("ERROR: NMOutlineView cell is NOT expandable")
         }
+
         return nil
     }
-       
+    fileprivate func collapseNode<T:Equatable>(_ node: NMNode, isUserInitiated: Bool)->T? {
+        guard let datasource = self.datasource,
+            let index = tableViewDatasource.firstIndex(of: node) else { return nil}
+
+        if isUserInitiated {
+            datasource.outlineView?(self, willCollapseItem: node.item)
+        }
+        let childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: node.item)
+        node.isExpanded = false
+        if childrenCount > 0 {
+            var tableViewIndexPaths = [IndexPath]()
+            var indexes = IndexSet()
+            for i in 0..<childrenCount
+            {
+                let childrenNode = tableViewDatasource[index + i + 1]
+                if childrenNode.isExpanded {
+                    let _: NSObject? = self.toggleNode(childrenNode)
+                }
+                 let tableViewIndexPath = IndexPath(row: index + i + 1, section: 0)
+                tableViewIndexPaths.append(tableViewIndexPath)
+                indexes.insert(index + i + 1)
+            }
+            if !tableViewIndexPaths.isEmpty {
+                while let index = indexes.last {
+                    tableViewDatasource.remove(at: index)
+                    indexes = IndexSet(indexes.dropLast())
+                }
+                super.deleteRows(at: tableViewIndexPaths, with: .fade)
+            }
+            if isUserInitiated {
+                datasource.outlineView?(self, didCollapseItem: node.item)
+            }
+
+        } else {
+            print("ERROR: NMOutlineView cell is NOT collapsable")
+        }
+
+        return nil
+    }
 }
 
 // MARK: - Internal TableView datasource/delegate
@@ -339,16 +375,16 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
             print("ERROR: no NMOutlineView datasource defined.")
             return NMOutlineViewCell(style: .default, reuseIdentifier: "ErrorCell")
         }
-        let item = tableViewDatasource[indexPath.row]
-        let theCell = datasource.outlineView(self, cellFor: item.item)
-        theCell.isExpanded = item.isExpanded
-        theCell.itemValue = item
-        theCell.nmIndentationLevel = item.level
-        theCell.toggleButton.isHidden = !datasource.outlineView(self, isItemExpandable: item.item)
+        let node = tableViewDatasource[indexPath.row]
+        let theCell = datasource.outlineView(self, cellFor: node.item)
+        theCell.isExpanded = node.isExpanded
+        theCell.node = node
+        theCell.nmIndentationLevel = node.level
+        theCell.toggleButton.isHidden = !datasource.outlineView(self, isItemExpandable: node.item)
         theCell.onToggle = { (sender) in
-            let _:NSObject? = self.toggleItem(item)
+            let _:NSObject? = self.toggleNode(node)
         }
-        theCell.update(with: item.item)
+        theCell.update(with: node.item)
         return theCell
     }
     

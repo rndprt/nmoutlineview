@@ -12,14 +12,14 @@ import UIKit
     
     // MARK: Properties
     @objc dynamic public var objectValue: Any {
-        return itemValue.item
+        return node.item
     }
     
     static var observerContext = 0
     
-    @objc dynamic internal var itemValue: NMOutlineView.NMItem! {
+    @objc dynamic internal var node: NMOutlineView.NMNode! {
         didSet {
-            itemValue.addObserver(self, forKeyPath: #keyPath(NMOutlineView.NMItem.isExpanded), options: [.new], context: &NMOutlineViewCell.observerContext)
+            node.addObserver(self, forKeyPath: #keyPath(NMOutlineView.NMNode.isExpanded), options: [.new], context: &NMOutlineViewCell.observerContext)
         }
     }
     
@@ -161,7 +161,7 @@ import UIKit
     
     open override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         if context == &NMOutlineViewCell.observerContext {
-            guard let item = object as? NMOutlineView.NMItem else { return }
+            guard let item = object as? NMOutlineView.NMNode else { return }
             self.isExpanded = item.isExpanded
         }
         
