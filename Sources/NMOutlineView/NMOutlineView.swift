@@ -20,7 +20,7 @@ extension IndexPath {
 
 // MARK:- NMOutlineDatasource Protocol
 @objc(NMOutlineViewDatasource)
-public protocol NMOutlineViewDatasource: NSObjectProtocol {
+public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
     // Required
     @objc func outlineView(_ outlineView: NMOutlineView, numberOfChildrenOfItem item: Any?) -> Int
     @objc func outlineView(_ outlineView: NMOutlineView, isItemExpandable item: Any) -> Bool
@@ -360,6 +360,13 @@ public protocol NMOutlineViewDatasource: NSObjectProtocol {
 
 // MARK: - Internal TableView datasource/delegate
 extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        datasource?.scrollViewDidScroll?(scrollView)
+    }
+    public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        datasource?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
+    }
+
     @objc public func numberOfSections(in tableView: UITableView) -> Int {
         return 1
     }
