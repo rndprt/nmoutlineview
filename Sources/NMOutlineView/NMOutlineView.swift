@@ -179,10 +179,15 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
         return tableViewDatasource[tableIndexPath.row].indexPath
     }
     
-    
     open func tableViewIndex(for cell: NMOutlineViewCell) -> Int? {
         guard let tableIndexPath = super.indexPath(for: cell) else { return nil}
         return tableIndexPath.row
+    }
+    
+    open var selectedCell : NMOutlineViewCell? {
+        guard let tableIndexPath = super.indexPathForSelectedRow else { return nil }
+        return super.cellForRow(at: tableIndexPath) as? NMOutlineViewCell
+        
     }
     
     open func selectCell(_ cell: NMOutlineViewCell, animated: Bool, scrollPosition: UITableView.ScrollPosition = .top) {
@@ -193,6 +198,10 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
     open func deselectCell(_ cell: NMOutlineViewCell, animated: Bool) {
         guard let tableIndexPath = super.indexPath(for: cell) else { return }
         super.deselectRow(at: tableIndexPath, animated: animated)
+    }
+    
+    open func toggleCellExpansion(_ cell: NMOutlineViewCell) {
+        let _: NSObject? = toggleNode(cell.node)
     }
     
     @objc open override func insertRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation) {
@@ -304,7 +313,7 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
                 tableViewDatasource.insert(newNode, at: index + 1)
                 super.insertRows(at: [IndexPath(row: index + 1, section: 0)], with: .fade)
                 if shouldExpandItem(childItem as? T) {
-                    let _: NSObject? = self.toggleNode(newNode)
+                    let _: NSObject? = self.expandNode(newNode, isUserInitiated: false)
                 }
                 childrenCount -= 1
                 if isUserInitiated {
