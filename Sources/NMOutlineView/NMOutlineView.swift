@@ -8,6 +8,9 @@
 
 import UIKit
 
+/*
+ Notes: I experimented with diffable datasources (iOS 13). But it didn't work properly when animating: when expanding/collapsing, the diffable datasource sent insertRows/deleteRows for each row separately. As a result, expanding rows did not give the impression to be inserted from the parent node
+ */
 
 // MARK: - IndexPath convenience initializer
 
@@ -117,8 +120,6 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
     @objc public override init(frame: CGRect, style: UITableView.Style) {
         super.init(frame: frame, style: style)
         sharedInit()
-        //let cell = NMOutlineViewCell(style: .default, reuseIdentifier: NMOutlineView.cellIdentifier)
-        //self.addSubview(cell)
     }
     
     
@@ -303,22 +304,13 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
                 datasource.outlineView?(self, willExpandItem: node.item)
             }
             node.isExpanded = true
-            var childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: node.item)
-            let nodeIndexPath = node.indexPath
-            while childrenCount > 0 {
-                var itemIndexPath = IndexPath(indexes: nodeIndexPath)
-                itemIndexPath.append(childrenCount - 1)
-                let childItem = datasource.outlineView(self, child: childrenCount - 1, ofItem: node.item)
-                let newNode = NMNode(withItem: childItem, at: itemIndexPath, ofParent: node, isExpanded: false)
-                tableViewDatasource.insert(newNode, at: index + 1)
-                super.insertRows(at: [IndexPath(row: index + 1, section: 0)], with: .fade)
-                if shouldExpandItem(childItem as? T) {
-                    let _: NSObject? = self.expandNode(newNode, isUserInitiated: false)
-                }
-                childrenCount -= 1
-                if isUserInitiated {
-                    datasource.outlineView?(self, didExpandItem: node.item)
-                }
+            let newNodes = flattenedChildren(of: node.item as! T, in: node)
+            performBatchUpdates({
+                tableViewDatasource.insert(contentsOf: newNodes, at: index + 1)
+                super.insertRows(at: (0..<newNodes.count).map { [0, $0 + index + 1]}, with: .fade)
+            })
+            if isUserInitiated {
+                datasource.outlineView?(self, didExpandItem: node.item)
             }
         } else {
             print("ERROR: NMOutlineView cell is NOT expandable")
@@ -326,43 +318,43 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
 
         return nil
     }
+    
+    private func flattenedChildren<T:Equatable>(of item: T, in node: NMNode) -> [NMNode] {
+        var children : [NMNode] = []
+        for childIndex in (0..<datasource.outlineView(self, numberOfChildrenOfItem: node.item)) {
+            let childItem = datasource.outlineView(self, child: childIndex, ofItem: node.item)
+            let isChildExpanded = shouldExpandItem(childItem as? T)
+            let newNode = NMNode(withItem: childItem, at: node.indexPath.appending(childIndex), ofParent: node, isExpanded: isChildExpanded)
+            children.append(newNode)
+            if isChildExpanded {
+                children.append(contentsOf: flattenedChildren(of: childItem as! T, in: newNode))
+            }
+        }
+        return children
+    }
+    
     fileprivate func collapseNode<T:Equatable>(_ node: NMNode, isUserInitiated: Bool)->T? {
         guard let datasource = self.datasource,
-            let index = tableViewDatasource.firstIndex(of: node) else { return nil}
-
+            nil != tableViewDatasource.firstIndex(of: node) else { return nil}
+        
         if isUserInitiated {
             datasource.outlineView?(self, willCollapseItem: node.item)
         }
-        let childrenCount = datasource.outlineView(self, numberOfChildrenOfItem: node.item)
         node.isExpanded = false
-        if childrenCount > 0 {
-            var tableViewIndexPaths = [IndexPath]()
-            var indexes = IndexSet()
-            for i in 0..<childrenCount
-            {
-                let childrenNode = tableViewDatasource[index + i + 1]
-                if childrenNode.isExpanded {
-                    let _: NSObject? = self.toggleNode(childrenNode)
-                }
-                 let tableViewIndexPath = IndexPath(row: index + i + 1, section: 0)
-                tableViewIndexPaths.append(tableViewIndexPath)
-                indexes.insert(index + i + 1)
-            }
-            if !tableViewIndexPaths.isEmpty {
-                while let index = indexes.last {
-                    tableViewDatasource.remove(at: index)
-                    indexes = IndexSet(indexes.dropLast())
-                }
-                super.deleteRows(at: tableViewIndexPaths, with: .fade)
-            }
-            if isUserInitiated {
-                datasource.outlineView?(self, didCollapseItem: node.item)
-            }
-
-        } else {
+        
+        if let indexes = tableViewDatasource.indexes(where: {
+            let refIndexPath = node.indexPath
+            if $0.indexPath.count <= refIndexPath.count { return false }
+            return $0.indexPath[0..<refIndexPath.count] == refIndexPath
+        }) {
+            performBatchUpdates({
+                tableViewDatasource.remove(at: indexes)
+                super.deleteRows(at: indexes.map { [0, $0]}, with: .fade)
+            })
+        }
+        else {
             print("ERROR: NMOutlineView cell is NOT collapsable")
         }
-
         return nil
     }
 }

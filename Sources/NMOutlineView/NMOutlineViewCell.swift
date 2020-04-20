@@ -39,6 +39,10 @@ import UIKit
         }
     }
 
+    @objc dynamic var leadingIntentation : CGFloat {
+        return CGFloat(self.nmIndentationLevel + (self.toggleButton.isHidden ? 0 : 1)) * self.indentationWidth
+    }
+
     @objc dynamic public var toggleImageView: UIImageView = UIImageView(frame: .zero)
 
     /// Cell indentation level
@@ -130,14 +134,14 @@ import UIKit
     
     @objc override open func layoutSubviews() {
         super.layoutSubviews()
+        let indentation = leadingIntentation
         
-        contentView.frame = contentViewFrame
         toggleButton.frame = toggleButtonFrame
         toggleImageView.frame = toggleImageFrame
         
-        textLabel?.frame.size.width -= leadingIntentation
-        
-        setNeedsDisplay()
+        imageView?.frame.origin.x += indentation
+        textLabel?.frame.origin.x += indentation
+        textLabel?.frame.size.width -= indentation
     }
     
     
@@ -154,9 +158,7 @@ import UIKit
     
     
     @IBAction @objc func toggleButtonAction(sender: UIButton) {
-        if let onToggle = self.onToggle {
-            onToggle(self)
-        }
+        self.onToggle?(self)
     }
     
     open override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
@@ -168,13 +170,6 @@ import UIKit
     }
     
     //MARK:- Private
-    private var leadingIntentation : CGFloat {
-        return CGFloat(self.nmIndentationLevel + (self.toggleButton.isHidden ? 0 : 1)) * self.indentationWidth
-    }
-    private var contentViewFrame : CGRect {
-        let indentationX = leadingIntentation
-        return CGRect(x: indentationX, y: 0, width: bounds.size.width - indentationX, height: bounds.size.height)
-    }
     private var toggleButtonFrame : CGRect {
         return CGRect(x: 0, y: 0, width: leadingIntentation + buttonSize.width, height: bounds.size.height)
     }
@@ -199,7 +194,6 @@ import UIKit
         self.toggleButton.backgroundColor = .clear // toggleButton is a touch target
         self.toggleButton.addTarget(self, action: #selector(toggleButtonAction(sender:)), for: .primaryActionTriggered)
         self.addSubview(toggleButton)
-        self.contentView.frame = contentViewFrame
         self.toggleButton.frame = toggleButtonFrame
         self.isExpanded = false
     }
