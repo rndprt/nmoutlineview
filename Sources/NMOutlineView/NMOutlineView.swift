@@ -73,6 +73,11 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
                 tableViewDatasource.append(nmItem)
             }
         }
+        if let filter = filter {
+            self.filter = nil
+            self.filteredTableViewDatasource = nil
+            applyFilter(filter, maintainSelection: true, updateTable: false)
+        }
         super.reloadData()
     }
     
@@ -208,59 +213,7 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
     }
     
     func applyFilter(_ filter: ((Any) -> Bool)?, maintainSelection: Bool = true, completion: ((Bool)->Void)? = nil) {
-        if let oldFilter = self.filter, let newFilter = filter {
-            let protected = protectedIndexes
-            let protectedIndexPaths = protected.map({ self.tableViewDatasource[$0].indexPath })
-print(protectedIndexPaths)
-            
-            let indexPathsToRemove = (indexesToFilter(using: newFilter, maintainSelection: true) ?? []).map { tableViewDatasource[$0].indexPath }
-
-            let indexesToRemove = filteredTableViewDatasource?
-                .indexes(where: { indexPathsToRemove.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
-            
-            if let toRemove = indexesToRemove, !toRemove.isEmpty {
-                performBatchUpdates({
-                    filteredTableViewDatasource?.remove(at: toRemove)
-                    super.deleteRows(at: toRemove.map({[0,$0]}), with: .fade)
-                }, completion: completion)
-            }
-            
-            let indexPathsToAdd = (indexesToFilter(using: oldFilter, maintainSelection: false) ?? [])
-                .map { tableViewDatasource[$0].indexPath }
-                .filter({ !indexPathsToRemove.contains($0)} )
-
-            protectedIndexes = protected
-            let filtered = tableViewDatasource.filter({ newFilter($0.item) })
-            let indexesToAdd = filtered.indexes(where: { indexPathsToAdd.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
-            
-            if let toAdd = indexesToAdd, !toAdd.isEmpty {
-                performBatchUpdates({
-                    filteredTableViewDatasource = filtered
-                    super.insertRows(at: toAdd.map({[0,$0]}), with: .fade)
-                }, completion: completion)
-            }
-        }
-        else if let filter = filter {
-            // Applying the filter, no filter before
-            if let indexesToRemove = indexesToFilter(using: filter, maintainSelection: true) {
-                performBatchUpdates({
-                    filteredTableViewDatasource = tableViewDatasource
-                    filteredTableViewDatasource?.remove(at: indexesToRemove)
-                    super.deleteRows(at: indexesToRemove.map({[0,$0]}), with: .fade)
-                }, completion: completion)
-            }
-        }
-        else if let oldFilter = self.filter {
-            // Clearing the filter
-            if let indexesToAdd = indexesToFilter(using: oldFilter, maintainSelection: false)?.filter({ !protectedIndexes.contains($0)  }) {
-                performBatchUpdates({
-                    filteredTableViewDatasource = nil
-                    protectedIndexes.removeAll()
-                    super.insertRows(at: indexesToAdd.map({[0,$0]}), with: .fade)
-                }, completion: completion)
-            }
-        }
-        self.filter = filter
+        applyFilter(filter, maintainSelection: maintainSelection, updateTable: true, completion: completion)
     }
     
     @objc open override func insertRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation) {
@@ -477,6 +430,82 @@ print(protectedIndexPaths)
         }
         return indexes
     }
+    fileprivate func applyFilter(_ filter: ((Any) -> Bool)?, maintainSelection: Bool = true, updateTable: Bool, completion: ((Bool)->Void)? = nil) {
+        if let oldFilter = self.filter, let newFilter = filter {
+            let protected = protectedIndexes
+            let protectedIndexPaths = protected.map({ self.tableViewDatasource[$0].indexPath })
+            
+            let indexPathsToRemove = (indexesToFilter(using: newFilter, maintainSelection: true) ?? []).map { tableViewDatasource[$0].indexPath }
+
+            let indexesToRemove = filteredTableViewDatasource?
+                .indexes(where: { indexPathsToRemove.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
+            
+            if let toRemove = indexesToRemove, !toRemove.isEmpty {
+                if updateTable {
+                    performBatchUpdates({
+                        filteredTableViewDatasource?.remove(at: toRemove)
+                        super.deleteRows(at: toRemove.map({[0,$0]}), with: .fade)
+                    }, completion: completion)
+                }
+                else {
+                    filteredTableViewDatasource?.remove(at: toRemove)
+                }
+            }
+            
+            let indexPathsToAdd = (indexesToFilter(using: oldFilter, maintainSelection: false) ?? [])
+                .map { tableViewDatasource[$0].indexPath }
+                .filter({ !indexPathsToRemove.contains($0)} )
+
+            protectedIndexes = protected
+            let filtered = tableViewDatasource.filter({ newFilter($0.item) })
+            let indexesToAdd = filtered.indexes(where: { indexPathsToAdd.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
+            
+            if let toAdd = indexesToAdd, !toAdd.isEmpty {
+                if updateTable {
+                    performBatchUpdates({
+                        filteredTableViewDatasource = filtered
+                        super.insertRows(at: toAdd.map({[0,$0]}), with: .fade)
+                    }, completion: completion)
+                }
+                else {
+                    filteredTableViewDatasource = filtered
+                }
+            }
+        }
+        else if let filter = filter {
+            // Applying the filter, no filter before
+            if let indexesToRemove = indexesToFilter(using: filter, maintainSelection: true) {
+                if updateTable {
+                    performBatchUpdates({
+                        filteredTableViewDatasource = tableViewDatasource
+                        filteredTableViewDatasource?.remove(at: indexesToRemove)
+                        super.deleteRows(at: indexesToRemove.map({[0,$0]}), with: .fade)
+                    }, completion: completion)
+                }
+                else {
+                    filteredTableViewDatasource = tableViewDatasource
+                    filteredTableViewDatasource?.remove(at: indexesToRemove)
+                }
+            }
+        }
+        else if let oldFilter = self.filter {
+            // Clearing the filter
+            if let indexesToAdd = indexesToFilter(using: oldFilter, maintainSelection: false)?.filter({ !protectedIndexes.contains($0)  }) {
+                if updateTable {
+                    performBatchUpdates({
+                        filteredTableViewDatasource = nil
+                        protectedIndexes.removeAll()
+                        super.insertRows(at: indexesToAdd.map({[0,$0]}), with: .fade)
+                    }, completion: completion)
+                }
+                else {
+                    filteredTableViewDatasource = nil
+                    protectedIndexes.removeAll()
+                }
+            }
+        }
+        self.filter = filter
+    }
 }
 
 // MARK: - Internal TableView datasource/delegate
@@ -507,7 +536,7 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
         theCell.isExpanded = node.isExpanded
         theCell.node = node
         theCell.nmIndentationLevel = node.level
-        theCell.toggleButton.isHidden = !datasource.outlineView(self, isItemExpandable: node.item)
+        theCell.buttonIsHidden = !datasource.outlineView(self, isItemExpandable: node.item)
         theCell.onToggle = { (sender) in
             let _:NSObject? = self.toggleNode(node)
         }
