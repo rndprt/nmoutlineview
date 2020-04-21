@@ -104,6 +104,10 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
 
     private var oldTableViewDatasource = [NMNode]()
     @objc dynamic private var tableViewDatasource = [NMNode]()
+    private var filter : ((Any)->Bool)?
+    private var filteredTableViewDatasource : [NMNode]?
+    private var protectedIndexes : IndexSet = []
+    private var futureOutlineSelectedIndexPath : IndexPath?
     
     // MARK: Initializers
     
@@ -133,8 +137,7 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
         super.awakeFromNib()
         sharedInit()
     }
-    
-    
+        
     // MARK: NMOutlineView methods
     
     @objc open func dequeReusableCell(withIdentifier identifier: String, style: UITableViewCell.CellStyle) -> NMOutlineViewCell {
@@ -174,7 +177,6 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
         return super.indexPathForRow(at: point)
     }
     
-    
     @objc open func indexPath(for cell: NMOutlineViewCell) -> IndexPath? {
         guard let tableIndexPath = super.indexPath(for: cell) else { return nil}
         return tableViewDatasource[tableIndexPath.row].indexPath
@@ -203,6 +205,62 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
     
     open func toggleCellExpansion(_ cell: NMOutlineViewCell) {
         let _: NSObject? = toggleNode(cell.node)
+    }
+    
+    func applyFilter(_ filter: ((Any) -> Bool)?, maintainSelection: Bool = true, completion: ((Bool)->Void)? = nil) {
+        if let oldFilter = self.filter, let newFilter = filter {
+            let protected = protectedIndexes
+            let protectedIndexPaths = protected.map({ self.tableViewDatasource[$0].indexPath })
+print(protectedIndexPaths)
+            
+            let indexPathsToRemove = (indexesToFilter(using: newFilter, maintainSelection: true) ?? []).map { tableViewDatasource[$0].indexPath }
+
+            let indexesToRemove = filteredTableViewDatasource?
+                .indexes(where: { indexPathsToRemove.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
+            
+            if let toRemove = indexesToRemove, !toRemove.isEmpty {
+                performBatchUpdates({
+                    filteredTableViewDatasource?.remove(at: toRemove)
+                    super.deleteRows(at: toRemove.map({[0,$0]}), with: .fade)
+                }, completion: completion)
+            }
+            
+            let indexPathsToAdd = (indexesToFilter(using: oldFilter, maintainSelection: false) ?? [])
+                .map { tableViewDatasource[$0].indexPath }
+                .filter({ !indexPathsToRemove.contains($0)} )
+
+            protectedIndexes = protected
+            let filtered = tableViewDatasource.filter({ newFilter($0.item) })
+            let indexesToAdd = filtered.indexes(where: { indexPathsToAdd.contains($0.indexPath) && !protectedIndexPaths.contains($0.indexPath) })
+            
+            if let toAdd = indexesToAdd, !toAdd.isEmpty {
+                performBatchUpdates({
+                    filteredTableViewDatasource = filtered
+                    super.insertRows(at: toAdd.map({[0,$0]}), with: .fade)
+                }, completion: completion)
+            }
+        }
+        else if let filter = filter {
+            // Applying the filter, no filter before
+            if let indexesToRemove = indexesToFilter(using: filter, maintainSelection: true) {
+                performBatchUpdates({
+                    filteredTableViewDatasource = tableViewDatasource
+                    filteredTableViewDatasource?.remove(at: indexesToRemove)
+                    super.deleteRows(at: indexesToRemove.map({[0,$0]}), with: .fade)
+                }, completion: completion)
+            }
+        }
+        else if let oldFilter = self.filter {
+            // Clearing the filter
+            if let indexesToAdd = indexesToFilter(using: oldFilter, maintainSelection: false)?.filter({ !protectedIndexes.contains($0)  }) {
+                performBatchUpdates({
+                    filteredTableViewDatasource = nil
+                    protectedIndexes.removeAll()
+                    super.insertRows(at: indexesToAdd.map({[0,$0]}), with: .fade)
+                }, completion: completion)
+            }
+        }
+        self.filter = filter
     }
     
     @objc open override func insertRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation) {
@@ -257,6 +315,7 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
         }
     }
     
+    //MARK:- Private
     private func reloadItems<T: Equatable>()->T? {
         if !tableViewDatasource.isEmpty && maintainExpandedItems {
             oldTableViewDatasource = tableViewDatasource.filter({$0.isExpanded})
@@ -305,10 +364,22 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
             }
             node.isExpanded = true
             let newNodes = flattenedChildren(of: node.item as! T, in: node)
-            performBatchUpdates({
+            if let filter = filter {
                 tableViewDatasource.insert(contentsOf: newNodes, at: index + 1)
-                super.insertRows(at: (0..<newNodes.count).map { [0, $0 + index + 1]}, with: .fade)
-            })
+                let filteredNodes = newNodes.filter({filter($0.item)})
+                if !filteredNodes.isEmpty, let filteredIndex = filteredTableViewDatasource?.firstIndex(of: node) {
+                    performBatchUpdates({
+                        filteredTableViewDatasource?.insert(contentsOf: filteredNodes, at: filteredIndex + 1)
+                        super.insertRows(at: (0..<filteredNodes.count).map { [0, $0 + filteredIndex + 1]}, with: .fade)
+                    })
+                }
+            }
+            else {
+                performBatchUpdates({
+                    tableViewDatasource.insert(contentsOf: newNodes, at: index + 1)
+                    super.insertRows(at: (0..<newNodes.count).map { [0, $0 + index + 1]}, with: .fade)
+                })
+            }
             if isUserInitiated {
                 datasource.outlineView?(self, didExpandItem: node.item)
             }
@@ -316,6 +387,39 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
             print("ERROR: NMOutlineView cell is NOT expandable")
         }
 
+        return nil
+    }
+    
+    fileprivate func collapseNode<T:Equatable>(_ node: NMNode, isUserInitiated: Bool)->T? {
+        guard let datasource = self.datasource,
+            nil != tableViewDatasource.firstIndex(of: node) else { return nil}
+        
+        if isUserInitiated {
+            datasource.outlineView?(self, willCollapseItem: node.item)
+        }
+        node.isExpanded = false
+        
+        if let indexes = childrenTableIndexes(of: node) {
+            if let filtered = filteredTableViewDatasource {
+                let nodesToRemove = tableViewDatasource.remove(at: indexes)
+                let outlineIndexPathsToRemove = nodesToRemove.map({ $0.indexPath })
+                if let toRemove = filtered.indexes(where: { outlineIndexPathsToRemove.contains($0.indexPath) }), !toRemove.isEmpty {
+                    performBatchUpdates({
+                        filteredTableViewDatasource?.remove(at: toRemove)
+                        super.deleteRows(at: toRemove.map { [0, $0]}, with: .fade)
+                    })
+                }
+            }
+            else {
+                performBatchUpdates({
+                    tableViewDatasource.remove(at: indexes)
+                    super.deleteRows(at: indexes.map { [0, $0]}, with: .fade)
+                })
+            }
+        }
+        else {
+            print("ERROR: NMOutlineView cell is NOT collapsable")
+        }
         return nil
     }
     
@@ -333,29 +437,45 @@ public protocol NMOutlineViewDatasource: UIScrollViewDelegate {
         return children
     }
     
-    fileprivate func collapseNode<T:Equatable>(_ node: NMNode, isUserInitiated: Bool)->T? {
-        guard let datasource = self.datasource,
-            nil != tableViewDatasource.firstIndex(of: node) else { return nil}
-        
-        if isUserInitiated {
-            datasource.outlineView?(self, willCollapseItem: node.item)
+
+    fileprivate func childrenTableIndexes(of node: NMNode) -> IndexSet? {
+        return tableViewDatasource.indexes(where: {
+            return $0.indexPath.hasPrefix(node.indexPath)
+        })
+    }
+    
+    fileprivate func indexesToFilter(using filter: ((Any)->Bool), maintainSelection: Bool) -> IndexSet? {
+        var indexes : IndexSet = []
+        var parentsToCheckIndexes : IndexSet = []
+        for (index, node) in tableViewDatasource.enumerated() {
+            if !filter(node.item) {
+                indexes.insert(index)
+                if node.isExpanded, let childrenIndexes = self.childrenTableIndexes(of: node) {
+                    indexes.formUnion(childrenIndexes)
+                }
+            }
+            else if datasource.outlineView(self, isItemExpandable: node.item) {
+                parentsToCheckIndexes.insert(index)
+            }
         }
-        node.isExpanded = false
-        
-        if let indexes = tableViewDatasource.indexes(where: {
-            let refIndexPath = node.indexPath
-            if $0.indexPath.count <= refIndexPath.count { return false }
-            return $0.indexPath[0..<refIndexPath.count] == refIndexPath
-        }) {
-            performBatchUpdates({
-                tableViewDatasource.remove(at: indexes)
-                super.deleteRows(at: indexes.map { [0, $0]}, with: .fade)
+        for parentIndex in parentsToCheckIndexes {
+            if let childrenIndexes = self.childrenTableIndexes(of: tableViewDatasource[parentIndex]), childrenIndexes.isStrictSubset(of: indexes) {
+                indexes.insert(parentIndex)
+            }
+        }
+        if maintainSelection, let selectedTableIndexes = indexPathsForSelectedRows?.map({$0.row}) {
+            let selectedOutlineIndexPaths = selectedTableIndexes.map({ (self.filteredTableViewDatasource ?? self.tableViewDatasource)[$0].indexPath })
+            
+            let correctedIndexes = (filteredTableViewDatasource == nil) ? selectedTableIndexes : (tableViewDatasource.indexes(where: {selectedOutlineIndexPaths.contains($0.indexPath)}) ?? []).allIndexes
+            protectedIndexes = indexes.filteredIndexSet(includeInteger: { index in
+                correctedIndexes.contains(index)
+                    || !selectedOutlineIndexPaths.filter({ selIP in selIP.hasPrefix(self.tableViewDatasource[index].indexPath)}).isEmpty
             })
+            indexes = indexes.filteredIndexSet(includeInteger: { !protectedIndexes.contains($0) })
+        } else if indexPathsForSelectedRows == nil && maintainSelection {
+            protectedIndexes.removeAll()
         }
-        else {
-            print("ERROR: NMOutlineView cell is NOT collapsable")
-        }
-        return nil
+        return indexes
     }
 }
 
@@ -372,9 +492,8 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
         return 1
     }
     
-    
     @objc public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return tableViewDatasource.count
+        return (filteredTableViewDatasource ?? tableViewDatasource).count
     }
     
     
@@ -383,7 +502,7 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
             print("ERROR: no NMOutlineView datasource defined.")
             return NMOutlineViewCell(style: .default, reuseIdentifier: "ErrorCell")
         }
-        let node = tableViewDatasource[indexPath.row]
+        let node = (filteredTableViewDatasource ?? tableViewDatasource)[indexPath.row]
         let theCell = datasource.outlineView(self, cellFor: node.item)
         theCell.isExpanded = node.isExpanded
         theCell.node = node
@@ -396,8 +515,33 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
         return theCell
     }
     
-    
+    public func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        guard let filtered = filteredTableViewDatasource else { return }
+        let node = filtered[indexPath.row]
+        guard let tableRow = tableViewDatasource.firstIndex(where: {$0.indexPath == node.indexPath}),
+            protectedIndexes.contains(tableRow) else { return }
+        
+        var toRemove : IndexSet = [indexPath.row]
+        for parent in node.indexPath.allParents() {
+            guard parent != futureOutlineSelectedIndexPath else { break }
+            guard let index = filteredTableViewDatasource?.firstIndex(where: {$0.indexPath == parent}) else { continue }
+            toRemove.insert(index)
+        }
+        
+        DispatchQueue.main.async {
+            self.performBatchUpdates({
+                self.protectedIndexes.remove(tableRow)
+                super.deleteRows(at: toRemove.map{[0, $0]}, with: .fade)
+                self.filteredTableViewDatasource?.remove(at: toRemove)
+            })
+        }
+    }
+    public func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        futureOutlineSelectedIndexPath = (filteredTableViewDatasource ?? tableViewDatasource)[indexPath.row].indexPath
+        return indexPath
+    }
     @objc public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        futureOutlineSelectedIndexPath = nil
         guard let datasource = self.datasource else {
             print("ERROR: no NMOutlineView datasource defined.")
             return
@@ -416,7 +560,7 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
             print("ERROR: no NMOutlineView datasource defined.")
             return rowHeight
         }
-        return datasource.outlineView?(self, heightForItem: tableViewDatasource[indexPath.row].item) ?? rowHeight
+        return datasource.outlineView?(self, heightForItem: (filteredTableViewDatasource ?? tableViewDatasource)[indexPath.row].item) ?? rowHeight
     }
 
     @objc public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
@@ -447,4 +591,23 @@ extension NMOutlineView: UITableViewDataSource, UITableViewDelegate {
     }
 }
 
+private extension IndexPath {
+    func hasPrefix(_ indexPath : IndexPath) -> Bool {
+        if self.count <= indexPath.count { return false }
+        return self[0..<indexPath.count] == indexPath
+    }
+    func allParents(includeSelf: Bool = false) -> [IndexPath] {
+        guard count > 0 else {
+            return includeSelf ? [self] : []
+        }
+        var ips : [IndexPath] = []
+        (1..<(count)).forEach {
+            ips.append(self[0..<$0])
+        }
+        if includeSelf {
+            ips.append(self)
+        }
+        return ips
+    }
+}
 
