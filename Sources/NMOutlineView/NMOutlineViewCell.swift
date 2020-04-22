@@ -15,11 +15,12 @@ import UIKit
         return node.item
     }
     
-    static var observerContext = 0
-    
-    @objc dynamic internal var node: NMOutlineView.NMNode! {
+    var expansionObservation : Any?
+    @objc dynamic internal var node: OutlineCoordinator.Node! {
         didSet {
-            node.addObserver(self, forKeyPath: #keyPath(NMOutlineView.NMNode.isExpanded), options: [.new], context: &NMOutlineViewCell.observerContext)
+            expansionObservation = node.observe(\.isExpanded, changeHandler: { [weak self] n , _ in
+                self?.isExpanded = n.isExpanded
+            })
         }
     }
     
@@ -159,14 +160,6 @@ import UIKit
     
     @IBAction @objc func toggleButtonAction(sender: UIButton) {
         self.onToggle?(self)
-    }
-    
-    open override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if context == &NMOutlineViewCell.observerContext {
-            guard let item = object as? NMOutlineView.NMNode else { return }
-            self.isExpanded = item.isExpanded
-        }
-        
     }
     
     //MARK:- Private
