@@ -41,14 +41,15 @@ import UIKit
     }
 
     @objc dynamic var leadingIntentation : CGFloat {
-        return CGFloat(self.nmIndentationLevel + (self.toggleButton.isHidden ? 0 : 1)) * self.indentationWidth
+        return CGFloat(nmIndentationLevel + indentationOffset + (toggleButton.isHidden ? 0 : 1)) * indentationWidth
     }
 
     @objc dynamic public var toggleImageView: UIImageView = UIImageView(frame: .zero)
 
     /// Cell indentation level
     @IBInspectable @objc dynamic public var nmIndentationLevel: Int = 0
-    
+    @IBInspectable @objc dynamic public var indentationOffset: Int = 0
+
     
     @objc dynamic override open var indentationWidth: CGFloat {
         didSet {
